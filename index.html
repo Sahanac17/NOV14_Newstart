@@ -51,10 +51,21 @@
     if (!moved) { target.x = W / 2; target.y = H * 0.4; }
     if (!diver.x) { diver.x = target.x; diver.y = target.y; resetHair(); }
     weeds.length = 0;
-    for (let i = 0; i < Math.max(6, W / 110); i++)
-      weeds.push({ x: rand(0, W), h: rand(40, 110), p: rand(0, 6), c: Math.random() < .5 ? '#2e9b6a' : '#3bb27a' });
+    const kinds = ['kelp', 'coral', 'flower', 'kelp', 'coral', 'flower'];
+    const n = Math.max(7, Math.round(W / 85));
+    for (let i = 0; i < n; i++)
+      weeds.push({ kind: kinds[i % kinds.length], x: (i + rand(.2, .8)) / n * W, h: rand(50, 110) * size / 70, p: rand(0, 6),
+                   c: ['#2e9b6a', '#3bb27a'][i % 2], cc: ['#ff7a8a', '#ff9f5a', '#ffb3d1', '#c58bff'][(Math.random() * 4) | 0] });
     fish.length = 0;
-    for (let i = 0; i < 6; i++) fish.push(newFish(true));
+    for (let i = 0; i < 7; i++) fish.push(newFish(true));
+    fish.slice(2).forEach(f => { f.cool = 6; });
+    // two friendly fish greet her right at the start
+    const g = [[2.3, -.9, -1], [-2.4, 1.0, 1]];
+    g.forEach(([dx, dy, d], i) => {
+      const f = fish[i];
+      f.x = clamp(diver.x + dx * size, 60, W - 60); f.y = clamp(diver.y + dy * size, 40, H * .75);
+      f.dir = d; f.say = 4.5; f.cool = 10;
+    });
   }
 
   function newFish(anywhere) {
@@ -63,7 +74,7 @@
     return {
       dir, y: rand(H * 0.12, H * 0.66), speed: rand(30, 75), s: rand(.35, .6) * size / 1.0,
       x: anywhere ? rand(0, W) : (dir > 0 ? -80 : W + 80),
-      phase: rand(0, 6), bob: rand(6, 16), color: colors[(Math.random() * colors.length) | 0]
+      say: 0, cool: rand(0, 3), phase: rand(0, 6), bob: rand(6, 16), color: colors[(Math.random() * colors.length) | 0]
     };
   }
 
@@ -74,6 +85,7 @@
 
   // ---------- input ----------
   function aim(e) {
+    if (!moved && e.clientX === 0 && e.clientY === 0 && e.pointerType === 'mouse') return; // spurious load-time event
     target.x = clamp(e.clientX, 0, W);
     target.y = clamp(e.clientY, 0, H);
     if (!moved) { moved = true; hint.classList.add('gone'); }
@@ -147,6 +159,8 @@
     for (let i = 0; i < fish.length; i++) {
       const f = fish[i];
       f.x += f.dir * f.speed * dt; f.phase += dt * 6;
+      f.say = Math.max(0, f.say - dt); f.cool -= dt;
+      if (f.cool <= 0 && f.say <= 0 && fish.filter(o => o.say > 0).length < 2 && Math.hypot(f.x - diver.x, f.y - diver.y) < size * 2.8) { f.say = 3; f.cool = 9; }
       if ((f.dir > 0 && f.x > W + 90) || (f.dir < 0 && f.x < -90)) fish[i] = newFish(false);
     }
   }
@@ -189,32 +203,105 @@
       ctx.fillStyle = '#fff'; ellipse(.55 * s, -.1 * s, s * .13, s * .13); ctx.fill();
       ctx.fillStyle = '#123'; ellipse(.58 * s, -.1 * s, s * .06, s * .06); ctx.fill();
       ctx.restore();
+      if (f.say > 0) speech(f.x, y - f.s * .75, f.say);
     }
+  }
+
+  function speech(x, y, t) {
+    const fs = clamp(size * .26, 13, 20), txt = 'Welcome Princess!';
+    ctx.font = '700 ' + fs + 'px system-ui, sans-serif';
+    const w = ctx.measureText(txt).width + 22, h = fs + 14;
+    const bx = clamp(x - w / 2, 8, W - w - 8), by = y - h - 10;
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, t / .4);
+    ctx.fillStyle = 'rgba(255,255,255,.95)';
+    ctx.beginPath(); ctx.roundRect(bx, by, w, h, h / 2); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(x - 7, by + h - 1); ctx.lineTo(x, y - 1); ctx.lineTo(x + 7, by + h - 1); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#c2418a'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(txt, bx + w / 2, by + h / 2 + 1);
+    ctx.restore();
+  }
+
+  const groundY = x => H * 0.87 + Math.sin(x * .012) * 9 + Math.sin(x * .031) * 4;
+
+  function drawPlant(w) {
+    const y0 = groundY(w.x) + 8, sw = Math.sin(time * 1.2 + w.p);
+    ctx.lineCap = 'round';
+    if (w.kind === 'kelp') {
+      for (let k = -1; k <= 1; k++) {
+        const bx = w.x + k * 9, h = w.h * (1 - Math.abs(k) * .25);
+        ctx.strokeStyle = w.c; ctx.lineWidth = 6;
+        ctx.beginPath(); ctx.moveTo(bx, y0);
+        ctx.quadraticCurveTo(bx + sw * 14 + k * 6, y0 - h / 2, bx + Math.sin(time * 1.2 + w.p + 1) * 22 + k * 10, y0 - h);
+        ctx.stroke();
+      }
+    } else if (w.kind === 'coral') {
+      const h = w.h * .75;
+      ctx.strokeStyle = w.cc; ctx.fillStyle = w.cc; ctx.lineWidth = 8;
+      const tips = [[0, -h], [-.45 * h, -.7 * h], [.45 * h, -.78 * h]];
+      ctx.beginPath(); ctx.moveTo(w.x, y0); ctx.lineTo(w.x, y0 - h * .45); ctx.stroke();
+      for (const [dx, dy] of tips) {
+        ctx.lineWidth = 7;
+        ctx.beginPath(); ctx.moveTo(w.x, y0 - h * .4); ctx.quadraticCurveTo(w.x + dx * .6, y0 + dy * .6, w.x + dx + sw * 2, y0 + dy); ctx.stroke();
+        ellipse(w.x + dx + sw * 2, y0 + dy, 6, 6); ctx.fill();
+      }
+    } else {
+      const top = y0 - w.h * .55;
+      ctx.strokeStyle = '#2e9b6a'; ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.moveTo(w.x, y0); ctx.quadraticCurveTo(w.x + sw * 6, y0 - w.h * .3, w.x + sw * 8, top); ctx.stroke();
+      const cx = w.x + sw * 8;
+      for (let k = 0; k < 7; k++) {
+        const an = -Math.PI / 2 + (k - 3) * .38 + sw * .05;
+        ctx.fillStyle = k % 2 ? '#ffb3d1' : '#c58bff';
+        ellipse(cx + Math.cos(an) * 12, top + Math.sin(an) * 12, 7, 12, an + Math.PI / 2); ctx.fill();
+      }
+      ctx.fillStyle = '#ffd23f'; ellipse(cx, top, 6, 6); ctx.fill();
+    }
+  }
+
+  function drawClam(fx, i) {
+    const r = size * .4, cx = fx * W, cy = groundY(fx * W) + r * .55;
+    const open = .5 + .18 * Math.sin(time * .9 + i * 2);
+    // bowl
+    ctx.fillStyle = '#f08fb8'; ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = 'rgba(120,40,90,.25)'; ctx.lineWidth = 2;
+    for (let k = -2; k <= 2; k++) { ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + k * r * .38, cy + Math.sqrt(Math.max(0, r * r - (k * r * .38) ** 2))); ctx.stroke(); }
+    // lid, hinged on the left edge
+    ctx.save(); ctx.translate(cx - r, cy); ctx.rotate(-open);
+    ctx.fillStyle = '#ffa9cb'; ctx.beginPath(); ctx.arc(r, 0, r, Math.PI, 0); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = 'rgba(120,40,90,.25)';
+    for (let k = -2; k <= 2; k++) { ctx.beginPath(); ctx.moveTo(r, 0); ctx.lineTo(r + k * r * .38, -Math.sqrt(Math.max(0, r * r - (k * r * .38) ** 2))); ctx.stroke(); }
+    ctx.restore();
+    // pearl
+    const pr = r * .3, px = cx, py = cy - pr * .15;
+    const pg = ctx.createRadialGradient(px - pr * .3, py - pr * .3, 1, px, py, pr);
+    pg.addColorStop(0, '#fff'); pg.addColorStop(.6, '#fdeaf4'); pg.addColorStop(1, '#d9b8e8');
+    ctx.fillStyle = pg; ellipse(px, py, pr, pr); ctx.fill();
+    const tw = (Math.sin(time * 3 + i * 2) + 1) / 2;
+    ctx.fillStyle = 'rgba(255,255,255,' + (.4 + tw * .6) + ')';
+    ctx.beginPath(); const sx = px + pr * 1.1, sy = py - pr * 1.1, sr = 3 + tw * 3;
+    ctx.moveTo(sx, sy - sr); ctx.lineTo(sx + sr * .3, sy - sr * .3); ctx.lineTo(sx + sr, sy); ctx.lineTo(sx + sr * .3, sy + sr * .3);
+    ctx.lineTo(sx, sy + sr); ctx.lineTo(sx - sr * .3, sy + sr * .3); ctx.lineTo(sx - sr, sy); ctx.lineTo(sx - sr * .3, sy - sr * .3); ctx.closePath(); ctx.fill();
   }
 
   function drawSeabed() {
     const top = H * 0.87;
-    for (const w of weeds) {
-      ctx.strokeStyle = w.c; ctx.lineWidth = 5; ctx.lineCap = 'round';
-      ctx.beginPath(); ctx.moveTo(w.x, top + 14);
-      ctx.quadraticCurveTo(w.x + Math.sin(time * 1.2 + w.p) * 14, top - w.h / 2, w.x + Math.sin(time * 1.2 + w.p + 1) * 22, top - w.h + 14);
-      ctx.stroke();
-    }
     ctx.fillStyle = '#e9d19b';
-    ctx.beginPath(); ctx.moveTo(0, H);
-    ctx.lineTo(0, top);
-    for (let x = 0; x <= W + 20; x += 20) ctx.lineTo(x, top + Math.sin(x * .012) * 9 + Math.sin(x * .031) * 4);
+    ctx.beginPath(); ctx.moveTo(0, H); ctx.lineTo(0, groundY(0));
+    for (let x = 0; x <= W + 20; x += 20) ctx.lineTo(x, groundY(x));
     ctx.lineTo(W, H); ctx.closePath(); ctx.fill();
     ctx.fillStyle = 'rgba(160,120,60,.18)';
     for (let i = 0; i < W / 50; i++) { ellipse((i * 137.5) % W, top + 22 + (i * 53) % Math.max(10, H - top - 26), 14, 3); ctx.fill(); }
-    // shells & stones
-    const items = [[.12, '#ff9ec7'], [.4, '#fff3d6'], [.68, '#ffb48a'], [.9, '#b9a9e8']];
+    for (const w of weeds) drawPlant(w);
+    // tiny shells
+    const items = [[.08, '#ffb48a'], [.37, '#fff3d6'], [.7, '#b9a9e8'], [.94, '#ff9ec7']];
     for (const [fx, col] of items) {
-      const x = fx * W, y = top + 26;
-      ctx.fillStyle = col; ctx.beginPath(); ctx.arc(x, y, 9, Math.PI, 0); ctx.closePath(); ctx.fill();
+      const x = fx * W, y = groundY(x) + 22;
+      ctx.fillStyle = col; ctx.beginPath(); ctx.arc(x, y, 8, Math.PI, 0); ctx.closePath(); ctx.fill();
       ctx.strokeStyle = 'rgba(0,0,0,.15)'; ctx.lineWidth = 1;
-      for (let k = -1; k <= 1; k++) { ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + k * 6, y - 9); ctx.stroke(); }
+      for (let k = -1; k <= 1; k++) { ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + k * 5, y - 8); ctx.stroke(); }
     }
+    [.2, .53, .82].forEach((fx, i) => drawClam(fx, i));
   }
 
   function drawBubbles() {
