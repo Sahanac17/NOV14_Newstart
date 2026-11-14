@@ -190,7 +190,8 @@
     const dxp = diver.x - mer.x;
     if (Math.abs(dxp) > size * .9) mer.face = Math.sign(dxp);
     mer.fs += (mer.face - mer.fs) * (1 - Math.exp(-5 * dt));
-    mer.say = Math.max(0, mer.say - dt); mer.cool -= dt;
+    mer.say = Math.max(0, mer.say - dt); mer.cool -= dt; diver.say = Math.max(0, (diver.say || 0) - dt);
+    if (mer.later > 0) { mer.later -= dt; if (mer.later <= 0) { mer.say = 3.2; mer.sayTxt = 'Let the party begin!'; } }
 
     const hand = handLocal(), hw = mPos(hand.x, hand.y);
     const d = Math.hypot(diver.x - hw.x, diver.y - hw.y);
@@ -207,7 +208,7 @@
       mer.t += dt / 1.5;
       if (mer.t >= 1) {
         mer.state = 'worn'; const h = headTop(); burst(h.x, h.y);
-        mer.say = 3.4; mer.sayTxt = 'Let the party begin!'; mer.cool = 14; startParty();
+        diver.say = 2.8; mer.say = 0; mer.later = 1.6; mer.cool = 14; startParty();
       }
     } else if (mer.state === 'worn' && mer.say <= 0 && mer.cool <= 0 && d < size * 3.6) {
       mer.say = 2.6; mer.sayTxt = 'A true princess!'; mer.cool = 12;
@@ -363,7 +364,8 @@
   }
 
   function drawMermaidSpeech() {
-    if (mer.say > 0) { const h = mPos(0, -1.2); speech(h.x, h.y, mer.say, mer.sayTxt); }
+    if (diver.say > 0) { const h = headTop(); speech(h.x - size * .8, h.y - size * .45, diver.say, 'Thank you, Mermaid!'); }
+    if (mer.say > 0) { const h = mPos(0, -1.35); speech(h.x, h.y, mer.say, mer.sayTxt); }
   }
 
   // ---------- party ----------
