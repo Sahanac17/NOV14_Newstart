@@ -156,6 +156,7 @@
     if (bubbles.length > 160) bubbles.splice(0, bubbles.length - 160);
 
     updateMermaid(dt);
+    updateParty(dt);
 
     // fish
     for (let i = 0; i < fish.length; i++) {
@@ -206,7 +207,7 @@
       mer.t += dt / 1.5;
       if (mer.t >= 1) {
         mer.state = 'worn'; const h = headTop(); burst(h.x, h.y);
-        mer.say = 3.2; mer.sayTxt = 'You look lovely!'; mer.cool = 12;
+        mer.say = 3.4; mer.sayTxt = 'Let the party begin!'; mer.cool = 14; startParty();
       }
     } else if (mer.state === 'worn' && mer.say <= 0 && mer.cool <= 0 && d < size * 3.6) {
       mer.say = 2.6; mer.sayTxt = 'A true princess!'; mer.cool = 12;
@@ -365,6 +366,193 @@
     if (mer.say > 0) { const h = mPos(0, -1.2); speech(h.x, h.y, mer.say, mer.sayTxt); }
   }
 
+  // ---------- party ----------
+  const party = { on: false, t: 0, dur: 18, conf: 0, note: 0 };
+  const confetti = [], notes = [];
+  const PARTY_COLORS = ['#ff5fa8', '#ffd23f', '#5ad1ff', '#8bf06a', '#c58bff', '#ff8a4c'];
+  const partyK = () => party.on ? clamp(Math.min(party.t, party.dur - party.t) / 1.2, 0, 1) : 0;
+
+  function startParty() {
+    party.on = true; party.t = 0; party.conf = 0; party.note = 0;
+    for (let i = 0; i < 40; i++)
+      bubbles.push({ x: rand(0, W), y: H * rand(.55, .95), r: rand(3, 8) * size / 70, vy: rand(60, 120), ph: rand(0, 6), amp: rand(8, 22), fr: rand(1.5, 3) });
+  }
+
+  function creatureDefs() {
+    const u = size * 1.1, xs = W < 600 ? [.10, .25, .40] : [.22, .36, .50];
+    return [
+      { kind: 'octo', x: xs[0] * W, y: groundY(xs[0] * W) + u * .12, u, delay: 0 },
+      { kind: 'crab', x: xs[1] * W, y: groundY(xs[1] * W) + u * .2, u, delay: .35 },
+      { kind: 'horse', x: xs[2] * W, y: groundY(xs[2] * W) - u * 1.5 + Math.sin(time * 2) * u * .06, u, delay: .7 }
+    ];
+  }
+  function popScale(c) {
+    const a = clamp((party.t - c.delay) / .6, 0, 1), e = 1 + 2.70158 * Math.pow(a - 1, 3) + 1.70158 * Math.pow(a - 1, 2);
+    return Math.max(0, e) * clamp((party.dur - party.t) / 1.2, 0, 1);
+  }
+
+  function updateParty(dt) {
+    if (party.on) {
+      party.t += dt; if (party.t >= party.dur) party.on = false;
+      party.conf -= dt;
+      while (party.conf <= 0) {
+        party.conf += .03;
+        confetti.push({ x: rand(0, W), y: -10, vy: rand(50, 110), ph: rand(0, 6), rot: rand(0, 6), spin: rand(-6, 6), w: rand(5, 9), h: rand(3, 5), c: PARTY_COLORS[(Math.random() * 6) | 0] });
+      }
+      party.note -= dt;
+      if (party.note <= 0) {
+        party.note = .3;
+        const spots = [[0, -.3], [0, -.7], [.8, -1.0]], defs = creatureDefs(), i = (Math.random() * 3) | 0, c = defs[i], sc = popScale(c);
+        if (sc > .6) notes.push({ x: c.x + spots[i][0] * c.u + rand(-6, 6), y: c.y + spots[i][1] * c.u, vy: rand(40, 70), ph: rand(0, 6), life: 3, c: PARTY_COLORS[(Math.random() * 6) | 0], dbl: Math.random() < .4 });
+      }
+    }
+    for (let i = confetti.length - 1; i >= 0; i--) {
+      const q = confetti[i]; q.y += q.vy * dt; q.ph += dt * 3; q.x += Math.sin(q.ph) * 22 * dt; q.rot += q.spin * dt;
+      if (q.y > H + 10) confetti.splice(i, 1);
+    }
+    for (let i = notes.length - 1; i >= 0; i--) {
+      const n = notes[i]; n.y -= n.vy * dt; n.ph += dt * 2.5; n.x += Math.sin(n.ph) * 18 * dt; n.life -= dt;
+      if (n.life <= 0) notes.splice(i, 1);
+    }
+  }
+
+  function hat(x, y, w, rot, c) {
+    ctx.save(); ctx.translate(x, y); ctx.rotate(rot);
+    ctx.fillStyle = c; ctx.beginPath(); ctx.moveTo(-w / 2, 0); ctx.lineTo(w / 2, 0); ctx.lineTo(0, -w * 1.2); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#fff'; ellipse(0, -w * 1.2, w * .14, w * .14); ctx.fill();
+    ctx.restore();
+  }
+
+  function drawPartyLights() {
+    const k = partyK(); if (k <= 0) return;
+    ctx.save(); ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < 5; i++) {
+      const x0 = (i + .5) / 5 * W, x1 = x0 + Math.sin(time * 1.3 + i * 1.7) * W * .28, hw = W * .08;
+      const g = ctx.createLinearGradient(0, 0, 0, H * .9), col = 'hsla(' + ((time * 70 + i * 72) % 360) + ',95%,62%,';
+      g.addColorStop(0, col + (.34 * k) + ')'); g.addColorStop(1, col + '0)');
+      ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(x0 - 6, 0); ctx.lineTo(x0 + 6, 0); ctx.lineTo(x1 + hw, H * .9); ctx.lineTo(x1 - hw, H * .9); ctx.closePath(); ctx.fill();
+    }
+    ctx.restore();
+    // bunting across the top
+    ctx.save(); ctx.translate(0, -(1 - k) * 70);
+    const n = Math.max(8, Math.round(W / 55)), qy = t => 14 + 2 * t * (1 - t) * 60;
+    ctx.strokeStyle = 'rgba(255,255,255,.8)'; ctx.lineWidth = 2; ctx.beginPath();
+    for (let i = 0; i <= 30; i++) { const t = i / 30; i ? ctx.lineTo(t * W, qy(t)) : ctx.moveTo(0, qy(t)); } ctx.stroke();
+    for (let i = 0; i < n; i++) {
+      const t = (i + .5) / n, x = t * W, y = qy(t), w = Math.min(34, W / n * .7);
+      ctx.fillStyle = PARTY_COLORS[i % 6]; ctx.beginPath(); ctx.moveTo(x - w / 2, y); ctx.lineTo(x + w / 2, y); ctx.lineTo(x, y + w * 1.1 + Math.sin(time * 4 + i) * 2); ctx.closePath(); ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  function drawOcto(b) {
+    ctx.translate(0, -b * .05); ctx.lineCap = 'round';
+    ctx.strokeStyle = '#9b6bd6'; ctx.lineWidth = .12;
+    for (let k = 0; k < 6; k++) {
+      const x0 = -.3 + k * .12;
+      ctx.beginPath(); ctx.moveTo(x0, -.35);
+      ctx.quadraticCurveTo(x0 + (k - 2.5) * .06 + Math.sin(time * 6 + k) * .08, -.15, x0 + (k - 2.5) * .1 + Math.sin(time * 6 + k + 1) * .06, .02); ctx.stroke();
+    }
+    ctx.fillStyle = '#b085ee'; ellipse(0, -.68, .38, .42); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,.25)'; ellipse(-.14, -.88, .12, .06, -.5); ctx.fill();
+    ctx.fillStyle = '#fff'; ellipse(-.15, -.66, .09, .1); ctx.fill(); ellipse(.15, -.66, .09, .1); ctx.fill();
+    ctx.fillStyle = '#2b1b4a'; ellipse(-.14, -.65, .045, .05); ctx.fill(); ellipse(.16, -.65, .045, .05); ctx.fill();
+    ctx.strokeStyle = '#6b2b8a'; ctx.lineWidth = .025; ctx.beginPath(); ctx.arc(0, -.55, .09, .15 * Math.PI, .85 * Math.PI); ctx.stroke();
+    ctx.fillStyle = 'rgba(255,130,170,.5)'; ellipse(-.27, -.56, .05, .035); ctx.fill(); ellipse(.27, -.56, .05, .035); ctx.fill();
+    hat(0, -1.05, .26, .15, '#ffd23f');
+    // drum
+    ctx.fillStyle = '#ff5f6d'; ctx.beginPath(); ctx.roundRect(-.3, -.24, .6, .24, .04); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,.7)'; ctx.lineWidth = .025;
+    for (let k = -2; k <= 2; k++) { ctx.beginPath(); ctx.moveTo(k * .12, -.24); ctx.lineTo(k * .12 + .06, 0); ctx.stroke(); }
+    ctx.fillStyle = '#ffe9c7'; ellipse(0, -.24, .3, .07); ctx.fill();
+    // two drumming arms
+    for (const side of [-1, 1]) {
+      const u = (Math.sin(time * Math.PI * 4 + (side > 0 ? Math.PI : 0)) + 1) / 2, hx = side * .22, hy = -.3 - .2 * u;
+      ctx.strokeStyle = '#9b6bd6'; ctx.lineWidth = .09; ctx.beginPath(); ctx.moveTo(side * .34, -.5); ctx.quadraticCurveTo(side * .45, -.38, hx, hy); ctx.stroke();
+      ctx.strokeStyle = '#fff0c9'; ctx.lineWidth = .035; ctx.beginPath(); ctx.moveTo(hx, hy); ctx.lineTo(hx - side * .12, hy - .12); ctx.stroke();
+      ctx.fillStyle = '#fff0c9'; ellipse(hx - side * .12, hy - .12, .04, .04); ctx.fill();
+    }
+  }
+
+  function drawCrab(b) {
+    ctx.translate(0, -b * .07); ctx.lineCap = 'round';
+    ctx.strokeStyle = '#e24b2d'; ctx.lineWidth = .06;
+    for (const side of [-1, 1]) for (let k = 0; k < 3; k++) {
+      ctx.beginPath(); ctx.moveTo(side * .24, -.2 + k * .03);
+      ctx.lineTo(side * (.46 + k * .04), -.08 + k * .03 + Math.sin(time * 12 + k + side) * .03); ctx.lineTo(side * (.52 + k * .04), 0); ctx.stroke();
+    }
+    ctx.fillStyle = '#ff6b4a'; ellipse(0, -.28, .36, .24); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,.2)'; ellipse(-.1, -.38, .16, .06, -.3); ctx.fill();
+    ctx.strokeStyle = '#e24b2d'; ctx.lineWidth = .03;
+    for (const side of [-1, 1]) {
+      ctx.beginPath(); ctx.moveTo(side * .12, -.46); ctx.lineTo(side * .12, -.6); ctx.stroke();
+      ctx.fillStyle = '#fff'; ellipse(side * .12, -.62, .07, .07); ctx.fill();
+      ctx.fillStyle = '#2b1b4a'; ellipse(side * .12, -.61, .035, .035); ctx.fill();
+    }
+    ctx.strokeStyle = '#7a1f10'; ctx.lineWidth = .025; ctx.beginPath(); ctx.arc(0, -.3, .08, .15 * Math.PI, .85 * Math.PI); ctx.stroke();
+    hat(.02, -.5, .2, .2, '#5ad1ff');
+    for (const side of [-1, 1]) {
+      const sh = Math.sin(time * 16 + side) * .06, hx = side * .46, hy = -.62 + sh;
+      ctx.strokeStyle = '#ff6b4a'; ctx.lineWidth = .08; ctx.beginPath(); ctx.moveTo(side * .3, -.3); ctx.lineTo(hx, hy); ctx.stroke();
+      ctx.fillStyle = '#ff6b4a'; ellipse(hx, hy, .1, .1); ctx.fill();
+      ctx.save(); ctx.translate(hx, hy - .02); ctx.rotate(Math.sin(time * 16 + side) * .5);
+      ctx.strokeStyle = '#8a5a2b'; ctx.lineWidth = .025; ctx.beginPath(); ctx.moveTo(0, .02); ctx.lineTo(0, -.1); ctx.stroke();
+      ctx.fillStyle = side > 0 ? '#ffd23f' : '#ff5fa8'; ellipse(0, -.2, .065, .1); ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,.6)'; ellipse(-.02, -.23, .015, .04); ctx.fill();
+      ctx.restore();
+    }
+  }
+
+  function drawHorse(b) {
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.strokeStyle = '#ffb43a'; ctx.lineWidth = .2;
+    ctx.beginPath(); ctx.moveTo(0, -.95); ctx.bezierCurveTo(.2, -.7, -.12, -.45, .06, -.2); ctx.bezierCurveTo(.2, 0, -.1, .1, -.2, -.02); ctx.stroke();
+    ctx.strokeStyle = '#ffd98a'; ctx.lineWidth = .06;
+    ctx.beginPath(); ctx.moveTo(.06, -.9); ctx.bezierCurveTo(.2, -.68, -.08, -.45, .1, -.22); ctx.stroke();
+    ctx.fillStyle = 'rgba(255,227,161,.8)'; ellipse(-.14, -.58, .05 + Math.sin(time * 9) * .01, .13, .2); ctx.fill();
+    ctx.fillStyle = '#ffb43a'; ellipse(0, -1.03, .17, .15); ctx.fill(); ellipse(.2, -1.0, .13, .055); ctx.fill();
+    ctx.fillStyle = '#fff'; ellipse(.03, -1.07, .04, .04); ctx.fill();
+    ctx.fillStyle = '#2b1b4a'; ellipse(.04, -1.07, .02, .02); ctx.fill();
+    ctx.fillStyle = 'rgba(255,120,150,.5)'; ellipse(-.02, -1.0, .035, .025); ctx.fill();
+    hat(-.04, -1.17, .2, -.25, '#8bf06a');
+    ctx.save(); ctx.translate(.3, -1.02); ctx.rotate(-.18 + b * .12);
+    ctx.fillStyle = '#ffd23f'; ctx.strokeStyle = '#d98e00'; ctx.lineWidth = .02;
+    ctx.beginPath(); ctx.moveTo(0, -.02); ctx.lineTo(.3, -.02); ctx.lineTo(.5, -.15); ctx.lineTo(.5, .13); ctx.lineTo(.3, .02); ctx.lineTo(0, .02); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawCreatures() {
+    if (!party.on) return;
+    const beat = Math.abs(Math.sin(time * Math.PI * 2));
+    for (const c of creatureDefs()) {
+      const sc = popScale(c); if (sc < .02) continue;
+      ctx.save(); ctx.translate(c.x, c.y); ctx.scale(sc * c.u, sc * c.u);
+      (c.kind === 'octo' ? drawOcto : c.kind === 'crab' ? drawCrab : drawHorse)(beat);
+      ctx.restore();
+    }
+  }
+
+  function drawNote(n) {
+    const r = size * .07;
+    ctx.save(); ctx.translate(n.x, n.y); ctx.globalAlpha = clamp(n.life / .8, 0, 1);
+    ctx.fillStyle = n.c; ctx.strokeStyle = n.c; ctx.lineWidth = Math.max(1.5, size * .025); ctx.lineCap = 'round';
+    ellipse(0, 0, r * 1.2, r * .9, -.4); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(r * 1.1, 0); ctx.lineTo(r * 1.1, -r * 3.4); ctx.stroke();
+    if (n.dbl) {
+      ellipse(r * 3.2, -r * .6, r * 1.2, r * .9, -.4); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(r * 4.3, -r * .6); ctx.lineTo(r * 4.3, -r * 4); ctx.stroke();
+      ctx.lineWidth = r * .7; ctx.beginPath(); ctx.moveTo(r * 1.1, -r * 3.4); ctx.lineTo(r * 4.3, -r * 4); ctx.stroke();
+    } else { ctx.beginPath(); ctx.moveTo(r * 1.1, -r * 3.4); ctx.quadraticCurveTo(r * 2.8, -r * 2.6, r * 2.2, -r * 1.6); ctx.stroke(); }
+    ctx.restore();
+  }
+
+  function drawPartyFront() {
+    for (const q of confetti) {
+      ctx.save(); ctx.translate(q.x, q.y); ctx.rotate(q.rot); ctx.fillStyle = q.c; ctx.fillRect(-q.w / 2, -q.h / 2, q.w, q.h); ctx.restore();
+    }
+    for (const n of notes) drawNote(n);
+  }
+
   // ---------- draw ----------
   function drawBackground() {
     const g = ctx.createLinearGradient(0, 0, 0, H);
@@ -390,7 +578,7 @@
 
   function drawFish() {
     for (const f of fish) {
-      const y = f.y + Math.sin(f.phase * .5) * f.bob;
+      const y = f.y + Math.sin(f.phase * .5) * f.bob * (1 + partyK() * 1.4);
       ctx.save();
       ctx.translate(f.x, y); ctx.scale(f.dir, 1);
       const s = f.s, wag = Math.sin(f.phase) * .25;
@@ -402,6 +590,7 @@
       ctx.fillStyle = 'rgba(255,255,255,.35)'; ellipse(.1 * s, -.15 * s, s * .55, s * .13); ctx.fill();
       ctx.fillStyle = '#fff'; ellipse(.55 * s, -.1 * s, s * .13, s * .13); ctx.fill();
       ctx.fillStyle = '#123'; ellipse(.58 * s, -.1 * s, s * .06, s * .06); ctx.fill();
+      if (partyK() > .05) hat(.42 * s, -.42 * s, s * .5 * partyK(), -.35, f.color === '#ff6f91' ? '#5ad1ff' : '#ff5fa8');
       ctx.restore();
       if (f.say > 0) speech(f.x, y - f.s * .75, f.say);
     }
@@ -609,12 +798,15 @@
     const dt = Math.min((now - last) / 1000, 0.05); last = now;
     update(dt);
     drawBackground();
+    drawPartyLights();
     drawFish();
     drawSeabed();
     drawMermaid();
+    drawCreatures();
     drawHair();
     drawDiver();
     drawCrownLayer();
+    drawPartyFront();
     drawBubbles();
     drawMermaidSpeech();
     requestAnimationFrame(frame);
