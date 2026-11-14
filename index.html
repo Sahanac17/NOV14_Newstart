@@ -15,11 +15,27 @@
     pointer-events: none; transition: opacity .8s; white-space: nowrap;
   }
   #hint.gone { opacity: 0; }
+  #snd {
+    position: fixed; top: calc(env(safe-area-inset-top, 0px) + 12px); right: calc(env(safe-area-inset-right, 0px) + 12px);
+    width: 46px; height: 46px; border-radius: 50%; border: 0; padding: 0; cursor: pointer;
+    background: rgba(255,255,255,.28); color: #fff; display: grid; place-items: center;
+    -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+  }
+  #snd:hover { background: rgba(255,255,255,.4); }
+  #snd svg { width: 26px; height: 26px; }
+  #snd .on, #snd.live .off { display: none; }
+  #snd.live .on { display: block; }
+  #snd.pulse { animation: pulse 1.8s infinite; }
+  @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(255,255,255,.7); } 70%, 100% { box-shadow: 0 0 0 16px rgba(255,255,255,0); } }
 </style>
 </head>
 <body>
 <canvas id="c" aria-label="Underwater scene with a diver princess"></canvas>
 <div id="hint">Move your mouse or finger</div>
+<button id="snd" class="pulse" type="button" aria-label="Turn sound on" aria-pressed="false">
+  <svg class="off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H3v6h3l5 4z" fill="currentColor"/><path d="m16 9 5 6M21 9l-5 6"/></svg>
+  <svg class="on" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H3v6h3l5 4z" fill="currentColor"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/></svg>
+</button>
 <script>
 (() => {
   const canvas = document.getElementById('c');
@@ -146,6 +162,7 @@
       bubbleTimer += rate * rand(.6, 1.4);
       const m = toWorld(0.82, 0.02);
       bubbles.push({ x: m.x, y: m.y, r: rand(2.5, 7) * size / 70, vy: rand(45, 95), ph: rand(0, 6), amp: rand(8, 22), fr: rand(1.5, 3) });
+      if (A.on && Math.random() < .35) blip();
     }
     for (let i = bubbles.length - 1; i >= 0; i--) {
       const b = bubbles[i];
@@ -202,13 +219,13 @@
     mer.glad += ((mer.state === 'held' ? 0 : 1) - mer.glad) * (1 - Math.exp(-3 * dt));
 
     if (mer.state === 'held' && d < size * 1.7 && mer.reach > .75) {
-      mer.state = 'giving'; mer.t = 0; mer.p0 = crownInHand();
+      mer.state = 'giving'; mer.t = 0; mer.p0 = crownInHand(); chime([880, 1175], .12);
       mer.say = 3.2; mer.sayTxt = 'This is for you, Princess!';
     } else if (mer.state === 'giving') {
       mer.t += dt / 1.5;
       if (mer.t >= 1) {
         mer.state = 'worn'; const h = headTop(); burst(h.x, h.y);
-        diver.say = 2.8; mer.say = 0; mer.later = 1.6; mer.cool = 14; startParty();
+        diver.say = 2.8; mer.say = 0; mer.later = 1.6; mer.cool = 14; startParty(); chime([1047, 1319, 1568, 2093], .09);
       }
     } else if (mer.state === 'worn' && mer.say <= 0 && mer.cool <= 0 && d < size * 3.6) {
       mer.say = 2.6; mer.sayTxt = 'A true princess!'; mer.cool = 12;
@@ -368,6 +385,100 @@
     if (mer.say > 0) { const h = mPos(0, -1.35); speech(h.x, h.y, mer.say, mer.sayTxt); }
   }
 
+  // ---------- sound (all made in the page, no files) ----------
+  const A = { ctx: null, on: false, master: null, party: null, noise: null, step: 0, fading: false };
+  const hz = m => 440 * Math.pow(2, (m - 69) / 12);
+  const sndBtn = document.getElementById('snd');
+
+  function initAudio() {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return false;
+    const c = A.ctx = new AC();
+    A.master = c.createGain(); A.master.gain.value = 0; A.master.connect(c.destination);
+    A.party = c.createGain(); A.party.connect(A.master);
+    const len = c.sampleRate * 2, buf = c.createBuffer(1, len, c.sampleRate), d = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+    A.noise = buf;
+    // gentle underwater rumble that slowly breathes
+    const src = c.createBufferSource(); src.buffer = buf; src.loop = true;
+    const lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 340;
+    const g = c.createGain(); g.gain.value = .22;
+    src.connect(lp); lp.connect(g); g.connect(A.master); src.start();
+    const lfo = c.createOscillator(), lg = c.createGain(); lfo.frequency.value = .13; lg.gain.value = 120;
+    lfo.connect(lg); lg.connect(lp.frequency); lfo.start();
+    for (const f of [110, 164.8]) {
+      const o = c.createOscillator(), og = c.createGain(); o.type = 'sine'; o.frequency.value = f; og.gain.value = .025;
+      o.connect(og); og.connect(A.master); o.start();
+    }
+    return true;
+  }
+
+  function tone(f, t, dur, type, vol, o = {}) {
+    const c = A.ctx, osc = c.createOscillator(), g = c.createGain();
+    osc.type = type; osc.frequency.setValueAtTime(f, t);
+    if (o.to) osc.frequency.exponentialRampToValueAtTime(o.to, t + dur);
+    let node = osc;
+    if (o.lp) { const fl = c.createBiquadFilter(); fl.type = 'lowpass'; fl.frequency.value = o.lp; osc.connect(fl); node = fl; }
+    node.connect(g); g.connect(o.dest || A.master);
+    g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + (o.attack || .01)); g.gain.exponentialRampToValueAtTime(.0001, t + dur);
+    osc.start(t); osc.stop(t + dur + .05);
+  }
+  function hiss(t, dur, vol, hp) {
+    const c = A.ctx, s = c.createBufferSource(), f = c.createBiquadFilter(), g = c.createGain();
+    s.buffer = A.noise; f.type = 'highpass'; f.frequency.value = hp;
+    s.connect(f); f.connect(g); g.connect(A.party);
+    g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(.0001, t + dur);
+    s.start(t, Math.random()); s.stop(t + dur + .02);
+  }
+  function blip() {
+    const f = rand(450, 900); tone(f, A.ctx.currentTime, .09, 'sine', .05, { to: f * 1.8 });
+  }
+  function chime(freqs, gap) {
+    if (!A.on) return;
+    const t = A.ctx.currentTime + .02;
+    freqs.forEach((f, i) => { tone(f, t + i * gap, 1.3, 'sine', .13); tone(f * 2.01, t + i * gap, .7, 'sine', .04); });
+  }
+
+  // an original little party tune: trumpet melody, bass, drum and maracas (120 beats a minute, in C)
+  const MEL = [[76, 76, 79, 79, 84, 0, 79, 0], [77, 81, 84, 81, 77, 0, 81, 0], [79, 79, 83, 83, 86, 0, 83, 0], [84, 79, 76, 79, 84, 0, 0, 0]];
+  const BASS = [[48, 43, 48, 43], [41, 48, 41, 48], [43, 50, 43, 50], [48, 43, 48, 48]];
+  function playStep(n, t) {
+    const i = n % 32, bar = i >> 3, pos = i & 7, m = MEL[bar][pos];
+    if (m) tone(hz(m), t, .22, 'sawtooth', .09, { lp: 2200, attack: .02, dest: A.party });
+    if (!(pos & 1)) tone(hz(BASS[bar][pos >> 1]), t, .24, 'triangle', .22, { dest: A.party });
+    if (pos === 0 || pos === 4) tone(150, t, .16, 'sine', .5, { to: 45, dest: A.party });
+    if (pos === 2 || pos === 6) { tone(230, t, .12, 'sine', .3, { to: 110, dest: A.party }); hiss(t, .09, .12, 1500); }
+    hiss(t, .06, pos & 1 ? .09 : .05, 6000);
+  }
+  function partyAudioReset() {
+    A.step = 0; A.fading = false;
+    if (A.ctx) { A.party.gain.cancelScheduledValues(0); A.party.gain.setValueAtTime(1, A.ctx.currentTime); }
+  }
+  function partyAudioTick() {
+    if (!A.on || !party.on || !A.ctx) return;
+    const now = A.ctx.currentTime, base = now - party.t;
+    while (base + A.step * .25 < now + .25) {
+      const t = base + A.step * .25;
+      if (t >= now - .02 && A.step * .25 < party.dur - .2) playStep(A.step, t);
+      A.step++;
+    }
+    if (!A.fading && party.t > party.dur - 1.6) { A.fading = true; A.party.gain.setTargetAtTime(0, now, .35); }
+  }
+
+  sndBtn.addEventListener('click', () => {
+    if (!A.ctx && !initAudio()) return;
+    A.on = !A.on;
+    if (A.ctx.state === 'suspended') A.ctx.resume();
+    A.master.gain.setTargetAtTime(A.on ? .7 : 0, A.ctx.currentTime, .05);
+    sndBtn.classList.toggle('live', A.on); sndBtn.classList.remove('pulse');
+    sndBtn.setAttribute('aria-pressed', A.on); sndBtn.setAttribute('aria-label', A.on ? 'Turn sound off' : 'Turn sound on');
+    if (A.on) { chime([1175, 1568], .1); if (party.on) A.step = 0; }
+  });
+  document.addEventListener('visibilitychange', () => {
+    if (!A.ctx) return;
+    if (document.hidden) A.ctx.suspend(); else if (A.on) A.ctx.resume();
+  });
+
   // ---------- party ----------
   const party = { on: false, t: 0, dur: 18, conf: 0, note: 0 };
   const confetti = [], notes = [];
@@ -375,7 +486,7 @@
   const partyK = () => party.on ? clamp(Math.min(party.t, party.dur - party.t) / 1.2, 0, 1) : 0;
 
   function startParty() {
-    party.on = true; party.t = 0; party.conf = 0; party.note = 0;
+    party.on = true; party.t = 0; party.conf = 0; party.note = 0; partyAudioReset();
     for (let i = 0; i < 40; i++)
       bubbles.push({ x: rand(0, W), y: H * rand(.55, .95), r: rand(3, 8) * size / 70, vy: rand(60, 120), ph: rand(0, 6), amp: rand(8, 22), fr: rand(1.5, 3) });
   }
@@ -394,6 +505,7 @@
   }
 
   function updateParty(dt) {
+    partyAudioTick();
     if (party.on) {
       party.t += dt; if (party.t >= party.dur) party.on = false;
       party.conf -= dt;
