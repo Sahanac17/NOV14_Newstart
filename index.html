@@ -155,6 +155,8 @@
     }
     if (bubbles.length > 160) bubbles.splice(0, bubbles.length - 160);
 
+    updateMermaid(dt);
+
     // fish
     for (let i = 0; i < fish.length; i++) {
       const f = fish[i];
@@ -163,6 +165,204 @@
       if (f.cool <= 0 && f.say <= 0 && fish.filter(o => o.say > 0).length < 2 && Math.hypot(f.x - diver.x, f.y - diver.y) < size * 2.8) { f.say = 3; f.cool = 9; }
       if ((f.dir > 0 && f.x > W + 90) || (f.dir < 0 && f.x < -90)) fish[i] = newFish(false);
     }
+  }
+
+  // ---------- mermaid & crown ----------
+  const mer = { x: 0, y: 0, fs: -1, face: -1, reach: 0, state: 'held', t: 0, say: 0, sayTxt: '', cool: 0, p0: { x: 0, y: 0 }, glad: 0 };
+  const sparks = [];
+  const mS = () => size * 1.35;
+  const mPos = (lx, ly) => ({ x: mer.x + mer.fs * lx * mS(), y: mer.y + ly * mS() });
+  const handLocal = () => ({ x: .40 + .58 * mer.reach, y: -.50 - .06 * mer.reach + Math.sin(time * 2) * .01 });
+  const crownInHand = () => { const h = mPos(handLocal().x, handLocal().y - .12); return h; };
+  const headTop = () => toWorld(.58, -.3);
+
+  function burst(x, y) {
+    for (let i = 0; i < 22; i++) {
+      const a = Math.random() * Math.PI * 2, v = rand(40, 150);
+      sparks.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v - 30, life: rand(.7, 1.4), max: 1.4, r: rand(3, 7), c: Math.random() < .5 ? '#fff6b0' : '#ffd23f' });
+    }
+  }
+
+  function updateMermaid(dt) {
+    mer.x = clamp(W * .72, size * 1.8, W - size * 1.8);
+    mer.y = groundY(mer.x) - mS() * .2;
+    const dxp = diver.x - mer.x;
+    if (Math.abs(dxp) > size * .9) mer.face = Math.sign(dxp);
+    mer.fs += (mer.face - mer.fs) * (1 - Math.exp(-5 * dt));
+    mer.say = Math.max(0, mer.say - dt); mer.cool -= dt;
+
+    const hand = handLocal(), hw = mPos(hand.x, hand.y);
+    const d = Math.hypot(diver.x - hw.x, diver.y - hw.y);
+    let tr = 0;
+    if (mer.state === 'held') tr = d < size * 4.4 ? 1 : 0;
+    else if (mer.state === 'giving') tr = 1;
+    mer.reach += (tr - mer.reach) * (1 - Math.exp(-4 * dt));
+    mer.glad += ((mer.state === 'held' ? 0 : 1) - mer.glad) * (1 - Math.exp(-3 * dt));
+
+    if (mer.state === 'held' && d < size * 1.7 && mer.reach > .75) {
+      mer.state = 'giving'; mer.t = 0; mer.p0 = crownInHand();
+      mer.say = 3.2; mer.sayTxt = 'This is for you, Princess!';
+    } else if (mer.state === 'giving') {
+      mer.t += dt / 1.5;
+      if (mer.t >= 1) {
+        mer.state = 'worn'; const h = headTop(); burst(h.x, h.y);
+        mer.say = 3.2; mer.sayTxt = 'You look lovely!'; mer.cool = 12;
+      }
+    } else if (mer.state === 'worn' && mer.say <= 0 && mer.cool <= 0 && d < size * 3.6) {
+      mer.say = 2.6; mer.sayTxt = 'A true princess!'; mer.cool = 12;
+    }
+
+    for (let i = sparks.length - 1; i >= 0; i--) {
+      const q = sparks[i];
+      q.life -= dt; q.x += q.vx * dt; q.y += q.vy * dt; q.vx *= .97; q.vy = q.vy * .97 - 10 * dt;
+      if (q.life <= 0) sparks.splice(i, 1);
+    }
+  }
+
+  function crownPath(w) {
+    const h = w * .62;
+    ctx.beginPath();
+    ctx.moveTo(-w / 2, 0); ctx.lineTo(-w / 2, -h * .7); ctx.lineTo(-w / 4, -h * .4); ctx.lineTo(0, -h);
+    ctx.lineTo(w / 4, -h * .4); ctx.lineTo(w / 2, -h * .7); ctx.lineTo(w / 2, 0); ctx.closePath();
+  }
+
+  function drawCrown(x, y, w, rot, glow) {
+    const h = w * .62;
+    ctx.save(); ctx.translate(x, y); ctx.rotate(rot);
+    ctx.shadowColor = 'rgba(255,235,130,.95)'; ctx.shadowBlur = glow;
+    ctx.fillStyle = '#ffd23f'; crownPath(w); ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = '#d98e00'; ctx.lineWidth = w * .05; ctx.lineJoin = 'round'; crownPath(w); ctx.stroke();
+    ctx.fillStyle = '#f0a500'; ctx.fillRect(-w / 2, -w * .14, w, w * .14);
+    ctx.fillStyle = '#ff5fa8'; ellipse(0, -h * .92, w * .06, w * .06); ctx.fill();
+    ctx.fillStyle = '#5ad1ff'; ellipse(-w / 2, -h * .72, w * .05, w * .05); ctx.fill(); ellipse(w / 2, -h * .72, w * .05, w * .05); ctx.fill();
+    ctx.fillStyle = '#ff3d7f'; ellipse(0, -w * .07, w * .045, w * .045); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,.55)'; ctx.fillRect(-w * .42, -h * .5, w * .08, h * .3);
+    ctx.restore();
+  }
+
+  function star(x, y, r) {
+    ctx.beginPath();
+    ctx.moveTo(x, y - r); ctx.lineTo(x + r * .28, y - r * .28); ctx.lineTo(x + r, y); ctx.lineTo(x + r * .28, y + r * .28);
+    ctx.lineTo(x, y + r); ctx.lineTo(x - r * .28, y + r * .28); ctx.lineTo(x - r, y); ctx.lineTo(x - r * .28, y - r * .28);
+    ctx.closePath(); ctx.fill();
+  }
+
+  function drawMermaid() {
+    const ms = mS();
+    // rock
+    ctx.fillStyle = '#5f7f99'; ellipse(mer.x, groundY(mer.x) + ms * .04, ms * .66, ms * .28); ctx.fill();
+    ctx.fillStyle = '#7ea0b8'; ellipse(mer.x - ms * .08, groundY(mer.x) - ms * .06, ms * .5, ms * .16); ctx.fill();
+
+    ctx.save();
+    ctx.translate(mer.x, mer.y); ctx.scale(mer.fs * ms, ms);
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    const sw = Math.sin(time * 1.6) * .05;
+    const SKIN = '#ffd9bf', HAIR = '#c93a4f';
+
+    // long flowing hair behind
+    ctx.fillStyle = HAIR; ctx.beginPath(); ctx.moveTo(-.2, -1.08);
+    ctx.bezierCurveTo(-.58, -.85, -.5 + sw, -.3, -.4 + sw * 2.5, .1);
+    ctx.quadraticCurveTo(-.2 + sw, -.04, -.08, -.3); ctx.lineTo(.12, -.3); ctx.lineTo(.2, -1.05); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = '#ff7a8a'; ctx.lineWidth = .025;
+    ctx.beginPath(); ctx.moveTo(-.3, -.9); ctx.quadraticCurveTo(-.46 + sw, -.5, -.36 + sw * 2, -.08); ctx.stroke();
+
+    // far arm resting on the rock
+    ctx.strokeStyle = SKIN; ctx.lineWidth = .1;
+    ctx.beginPath(); ctx.moveTo(-.13, -.62); ctx.quadraticCurveTo(-.36, -.42, -.3, -.04); ctx.stroke();
+    ctx.fillStyle = SKIN; ellipse(-.3, -.03, .05, .05); ctx.fill();
+
+    // torso
+    ctx.fillStyle = SKIN; ellipse(0, -.36, .17, .33); ctx.fill();
+
+    // tail curling over the rock
+    const P = [[0, -.04], [-.28, .3], [-.64, .3], [-.98, .0]], N = 16, pts = [];
+    for (let i = 0; i <= N; i++) {
+      const t = i / N, u = 1 - t;
+      pts.push([u*u*u*P[0][0] + 3*u*u*t*P[1][0] + 3*u*t*t*P[2][0] + t*t*t*P[3][0],
+                u*u*u*P[0][1] + 3*u*u*t*P[1][1] + 3*u*t*t*P[2][1] + t*t*t*P[3][1]]);
+    }
+    for (let i = 0; i < N; i++) {
+      const t = i / N, w = .36 * (1 - t) + .1;
+      ctx.strokeStyle = i % 2 ? '#2fcfbf' : '#25b8aa'; ctx.lineWidth = w;
+      ctx.beginPath(); ctx.moveTo(pts[i][0], pts[i][1]); ctx.lineTo(pts[i + 1][0], pts[i + 1][1]); ctx.stroke();
+    }
+    ctx.strokeStyle = 'rgba(255,255,255,.3)'; ctx.lineWidth = .03;
+    ctx.beginPath(); ctx.moveTo(pts[1][0], pts[1][1] - .08);
+    for (let i = 2; i < N - 2; i++) ctx.lineTo(pts[i][0], pts[i][1] - (.15 * (1 - i / N)));
+    ctx.stroke();
+    // fin
+    const e = pts[N], a = Math.atan2(e[1] - pts[N - 2][1], e[0] - pts[N - 2][0]) + Math.sin(time * 1.8) * .2;
+    ctx.save(); ctx.translate(e[0], e[1]); ctx.rotate(a);
+    ctx.fillStyle = '#ff8fc3';
+    ctx.beginPath(); ctx.moveTo(0, 0);
+    ctx.bezierCurveTo(-.02, -.18, .16, -.36, .34, -.3); ctx.bezierCurveTo(.24, -.18, .22, -.08, .26, 0);
+    ctx.bezierCurveTo(.22, .08, .24, .18, .34, .3); ctx.bezierCurveTo(.16, .36, -.02, .18, 0, 0);
+    ctx.closePath(); ctx.fill();
+    ctx.restore();
+
+    // shell top
+    ctx.fillStyle = '#a78bfa';
+    for (const sx of [-.075, .075]) { ctx.beginPath(); ctx.arc(sx, -.5, .08, 0, Math.PI * 2); ctx.fill(); }
+    ctx.strokeStyle = 'rgba(255,255,255,.45)'; ctx.lineWidth = .012;
+    for (const sx of [-.075, .075]) for (let k = -1; k <= 1; k++) { ctx.beginPath(); ctx.moveTo(sx, -.5); ctx.lineTo(sx + k * .045, -.57); ctx.stroke(); }
+
+    // near arm: reaches out with the crown
+    const hl = handLocal(), sx = .14, sy = -.64;
+    const ex = (sx + hl.x) / 2, ey = (sy + hl.y) / 2 + .13 * (1 - mer.reach * .7);
+    ctx.strokeStyle = SKIN; ctx.lineWidth = .1;
+    ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(ex, ey); ctx.lineTo(hl.x, hl.y); ctx.stroke();
+    ctx.fillStyle = SKIN; ellipse(hl.x, hl.y, .055, .055); ctx.fill();
+
+    // head (looks toward the princess)
+    const hd = toWorldMermaid(0, -.95);
+    let lx = diver.x - hd.x, ly = diver.y - hd.y; const ld = Math.hypot(lx, ly) || 1;
+    lx = lx / ld * mer.fs; ly = ly / ld;
+    ctx.save(); ctx.translate(0, -.78); ctx.rotate(clamp(lx * .12 + ly * .05, -.15, .15));
+    ctx.fillStyle = SKIN; ellipse(0, -.17, .19, .2); ctx.fill();
+    ctx.fillStyle = 'rgba(255,130,150,.4)'; ellipse(-.1, -.1, .035, .025); ctx.fill(); ellipse(.1, -.1, .035, .025); ctx.fill();
+    const blink = (time % 4.3) > 4.15;
+    for (const ex2 of [-.075, .075]) {
+      if (blink) { ctx.strokeStyle = '#6b2b3a'; ctx.lineWidth = .02; ctx.beginPath(); ctx.moveTo(ex2 - .04, -.17); ctx.lineTo(ex2 + .04, -.17); ctx.stroke(); continue; }
+      ctx.fillStyle = '#fff'; ellipse(ex2, -.17, .05, .057); ctx.fill();
+      ctx.fillStyle = '#1f9fb5'; ellipse(ex2 + lx * .022, -.17 + ly * .022, .033, .037); ctx.fill();
+      ctx.fillStyle = '#12313a'; ellipse(ex2 + lx * .026, -.17 + ly * .026, .017, .02); ctx.fill();
+      ctx.fillStyle = '#fff'; ellipse(ex2 + lx * .022 - .01, -.18 + ly * .022, .008, .008); ctx.fill();
+      ctx.strokeStyle = '#6b2b3a'; ctx.lineWidth = .016;
+      ctx.beginPath(); ctx.moveTo(ex2 - .05, -.19); ctx.quadraticCurveTo(ex2, -.25, ex2 + .05, -.19); ctx.stroke();
+    }
+    ctx.strokeStyle = '#d9526e'; ctx.lineWidth = .02;
+    ctx.beginPath(); ctx.arc(0, -.1 - mer.glad * .01, .04 + mer.glad * .03, .15 * Math.PI, .85 * Math.PI); ctx.stroke();
+    ctx.fillStyle = HAIR; ctx.beginPath(); ctx.arc(0, -.17, .205, Math.PI, Math.PI * 2);
+    ctx.quadraticCurveTo(.15, -.3, 0, -.27); ctx.quadraticCurveTo(-.14, -.28, -.205, -.17); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#ff9ec7'; ellipse(.12, -.3, .035, .035); ctx.fill();
+    ctx.fillStyle = '#fff'; ellipse(.12, -.3, .014, .014); ctx.fill();
+    ctx.restore();
+
+    ctx.restore();
+  }
+  function toWorldMermaid(lx, ly) { return mPos(lx, ly); }
+
+  function drawCrownLayer() {
+    const ms = mS();
+    if (mer.state === 'held') {
+      const c = crownInHand();
+      drawCrown(c.x, c.y, ms * .3, Math.sin(time * 1.5) * .06, 14 + Math.sin(time * 3) * 4);
+      const tw = (Math.sin(time * 3.2) + 1) / 2; ctx.fillStyle = 'rgba(255,255,255,' + (.4 + tw * .6) + ')';
+      star(c.x + ms * .17, c.y - ms * .12, 3 + tw * 4);
+    } else if (mer.state === 'giving') {
+      const t = mer.t, e = t * t * (3 - 2 * t), end = headTop();
+      const x = mer.p0.x + (end.x - mer.p0.x) * e, y = mer.p0.y + (end.y - mer.p0.y) * e - Math.sin(Math.PI * t) * size * .6;
+      drawCrown(x, y, ms * .3 + (size * .4 - ms * .3) * e, Math.sin(t * 6) * .2 * (1 - e), 16);
+    }
+    for (const q of sparks) {
+      ctx.globalAlpha = clamp(q.life / q.max * 1.4, 0, 1); ctx.fillStyle = q.c; star(q.x, q.y, q.r);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function drawMermaidSpeech() {
+    if (mer.say > 0) { const h = mPos(0, -1.2); speech(h.x, h.y, mer.say, mer.sayTxt); }
   }
 
   // ---------- draw ----------
@@ -207,8 +407,8 @@
     }
   }
 
-  function speech(x, y, t) {
-    const fs = clamp(size * .26, 13, 20), txt = 'Welcome Princess!';
+  function speech(x, y, t, txt = 'Welcome Princess!') {
+    const fs = clamp(size * .26, 13, 20);
     ctx.font = '700 ' + fs + 'px system-ui, sans-serif';
     const w = ctx.measureText(txt).width + 22, h = fs + 14;
     const bx = clamp(x - w / 2, 8, W - w - 8), by = y - h - 10;
@@ -301,7 +501,7 @@
       ctx.strokeStyle = 'rgba(0,0,0,.15)'; ctx.lineWidth = 1;
       for (let k = -1; k <= 1; k++) { ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + k * 5, y - 8); ctx.stroke(); }
     }
-    [.2, .53, .82].forEach((fx, i) => drawClam(fx, i));
+    [.14, .40, .93].forEach((fx, i) => drawClam(fx, i));
   }
 
   function drawBubbles() {
@@ -398,6 +598,7 @@
     // regulator + cheek
     ctx.fillStyle = '#34495e'; ellipse(.8, -.0, .04, .035); ctx.fill();
     ctx.fillStyle = 'rgba(255,120,150,.5)'; ellipse(.68, -.02, .035, .025); ctx.fill();
+    if (mer.state === 'worn') drawCrown(.57, -.27, .4, .14, 5);
 
     ctx.restore();
   }
@@ -410,9 +611,12 @@
     drawBackground();
     drawFish();
     drawSeabed();
+    drawMermaid();
     drawHair();
     drawDiver();
+    drawCrownLayer();
     drawBubbles();
+    drawMermaidSpeech();
     requestAnimationFrame(frame);
   }
 
